@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require("cors");
+const cron = require('node-cron');
+const axios = require('axios');
 const connectToMongo = require('./db');
 const http = require('http');
 const { Server } = require("socket.io");
@@ -15,6 +17,20 @@ const allowedOrigins = [
   "https://flow-frontend-omega.vercel.app",
   "http://localhost:5173",
 ];
+app.get('/', (req, res) => {
+  res.send('🟢 Flow backend is alive.');
+});
+
+const SELF_PING_URL = 'https://flow-backend-ztda.onrender.com';
+
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    await axios.get(SELF_PING_URL);
+    console.log(`[Keep-Alive] Pinged self at ${new Date().toISOString()}`);
+  } catch (err) {
+    console.error(`[Keep-Alive] Ping failed: ${err.message}`);
+  }
+});
 
 const io = new Server(server, {
   cors: {
