@@ -15,7 +15,7 @@ const server = http.createServer(app);
 // 2. Initialize Socket.IO server and configure CORS
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173", // IMPORTANT: Change this to your React app's URL
+    origin: "https://flow-frontend-omega.vercel.app", // IMPORTANT: Change this to your React app's URL
     methods: ["GET", "POST"]
   }
 });
