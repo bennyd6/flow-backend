@@ -34,6 +34,7 @@ app.use('/api/projects', require('./routes/proj'));
 app.use('/api/tasks', require('./routes/task'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/video', require('./routes/video'));
+app.use('/api/github', require('./routes/github'));
 
 // --- Socket.IO Logic for CHAT (Default Namespace) ---
 io.on('connection', (socket) => {
