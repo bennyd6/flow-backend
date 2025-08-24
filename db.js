@@ -1,15 +1,17 @@
-const mongoose=require('mongoose');
+const mongoose = require('mongoose');
+require('dotenv').config(); // Load environment variables
 
-const MONGO_URI="mongodb+srv://cadheshbenny:41F0DWxjffEDLE8x@flow.stwnceb.mongodb.net/?retryWrites=true&w=majority&appName=flow"
-
+const MONGO_URI = process.env.MONGO_URI;
 
 const connectToMongo = () => {
-    mongoose.connect(MONGO_URI)
-        .then(() => console.log("MongoDB Connected...."))
-        .catch((e) => {
-            console.error("MongoDB connection error:", e);
-        });
+    mongoose.connect(MONGO_URI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true,
+    })
+    .then(() => console.log("MongoDB Connected...."))
+    .catch((e) => {
+        console.error("MongoDB connection error:", e);
+    });
 };
 
-
-module.exports=connectToMongo
+module.exports = connectToMongo;
