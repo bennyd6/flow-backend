@@ -11,14 +11,26 @@ const port = process.env.PORT || 3000;
 
 const server = http.createServer(app);
 
+const allowedOrigins = [
+  "https://flow-frontend-omega.vercel.app",
+  "http://localhost:5173",
+];
+
 const io = new Server(server, {
   cors: {
-    origin: "https://flow-frontend-omega.vercel.app", // Your React app's URL
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.indexOf(origin) === -1) {
+        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        return callback(new Error(msg), false);
+      }
+      return callback(null, true);
+    },
     methods: ["GET", "POST"]
   }
 });
 
-app.use(cors());
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 // --- Socket.IO Logic for VIDEO (on '/video' Namespace) ---
