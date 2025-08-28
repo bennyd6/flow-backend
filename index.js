@@ -73,7 +73,9 @@ videoSocket.on("connection", (socket) => {
 
     peers.set(socket.id, username);
     socket.join(joinedRoom);
-    videoSocket.to(joinedRoom).emit("peer-joined", { id: socket.id, name: username });
+    
+    // ✨ FIX: Use socket.broadcast.to() to emit to all clients in the room EXCEPT the sender
+    socket.broadcast.to(joinedRoom).emit("peer-joined", { id: socket.id, name: username });
     
     if (wasRoomEmpty) {
         io.to(joinedRoom).emit("call-status-change", { isActive: true, projectId: joinedRoom });
@@ -81,8 +83,8 @@ videoSocket.on("connection", (socket) => {
   });
 
   socket.on("signal", ({ to, data }) => {
-    // ✨ **FIX:** Include sender's name with the signal
     const senderUsername = rooms.get(joinedRoom)?.get(socket.id) || 'Anonymous';
+    // This is a direct message, so videoSocket.to(to) is correct
     videoSocket.to(to).emit("signal", { from: socket.id, name: senderUsername, data });
   });
 
@@ -96,7 +98,8 @@ videoSocket.on("connection", (socket) => {
         io.to(joinedRoom).emit("call-status-change", { isActive: false, projectId: joinedRoom });
       }
     }
-    videoSocket.to(joinedRoom).emit("peer-left", socket.id);
+    // ✨ FIX: Use socket.broadcast.to() to notify others
+    socket.broadcast.to(joinedRoom).emit("peer-left", socket.id);
     socket.leave(joinedRoom);
     joinedRoom = null;
   };
