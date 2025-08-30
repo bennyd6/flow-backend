@@ -15,7 +15,7 @@ const server = http.createServer(app);
 
 // --- CORS Configuration ---
 const allowedOrigins = [
-  // "https://flow-frontend-omega.vercel.app",
+  "https://flow-frontend-omega.vercel.app",
   "http://localhost:5173",
   // "http://localhost:3000"
 ];
