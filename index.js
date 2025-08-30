@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require("cors");
+const cron = require('node-cron');
+const axios = require('axios');
 const connectToMongo = require('./db');
 const http = require('http');
 const { Server } = require("socket.io");
@@ -11,35 +13,45 @@ const port = process.env.PORT || 3000;
 
 const server = http.createServer(app);
 
+// --- CORS Configuration ---
 const allowedOrigins = [
-  "https://flow-frontend-omega.vercel.app",
+  // "https://flow-frontend-omega.vercel.app",
   "http://localhost:5173",
+  // "http://localhost:3000"
 ];
 
-const io = new Server(server, {
-  cors: {
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    methods: ["GET", "POST"]
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('The CORS policy for this site does not allow access from the specified Origin.'));
+    }
+  },
+};
+
+app.use(cors(corsOptions));
+app.use(express.json());
+
+const io = new Server(server, { cors: corsOptions });
+
+app.get('/', (req, res) => {
+  res.send('Flow backend is alive and running.');
+});
+
+const SELF_PING_URL = 'https://flow-backend-ztda.onrender.com';
+cron.schedule('*/10 * * * *', async () => {
+  try {
+    await axios.get(SELF_PING_URL);
+    console.log(`[Keep-Alive] Pinged self to prevent sleep at ${new Date().toISOString()}`);
+  } catch (err) {
+    console.error(`[Keep-Alive] Self-ping failed: ${err.message}`);
   }
 });
 
-app.use(cors({ origin: allowedOrigins }));
-app.use(express.json());
-
-// --- Socket.IO Logic for VIDEO (on '/video' Namespace) ---
-const videoSocket = io.of("/video");
-// roomId -> Map(socketId -> username)
 const rooms = new Map();
-
 app.set('videoRooms', rooms);
 
-// --- API Routes ---
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/projects', require('./routes/proj'));
 app.use('/api/tasks', require('./routes/task'));
@@ -47,14 +59,17 @@ app.use('/api/chat', require('./routes/chat'));
 app.use('/api/video', require('./routes/video'));
 app.use('/api/github', require('./routes/github'));
 
-// --- Socket.IO Logic for CHAT (Default Namespace) ---
-io.on('connection', (socket) => {
-  console.log('A user connected for CHAT:', socket.id);
-  socket.on('join_project', (projectId) => socket.join(projectId));
-  socket.on('send_message', (data) => io.to(data.projectId).emit('receive_message', data));
-  socket.on('disconnect', () => console.log('Chat user disconnected:', socket.id));
-});
+const chatSocket = io.of("/");
+const videoSocket = io.of("/video");
 
+chatSocket.on('connection', (socket) => {
+  socket.on('join_project', (projectId) => {
+    socket.join(projectId);
+  });
+  socket.on('send_message', (data) => {
+    chatSocket.to(data.projectId).emit('receive_message', data);
+  });
+});
 
 videoSocket.on("connection", (socket) => {
   let joinedRoom = null;
@@ -64,41 +79,39 @@ videoSocket.on("connection", (socket) => {
     joinedRoom = data.roomId;
     username = data.username;
 
-    const wasRoomEmpty = !rooms.has(joinedRoom) || rooms.get(joinedRoom).size === 0;
-    if (!rooms.has(joinedRoom)) rooms.set(joinedRoom, new Map());
+    if (!rooms.has(joinedRoom)) {
+        rooms.set(joinedRoom, new Map());
+    }
+    const peersInRoom = rooms.get(joinedRoom);
     
-    const peers = rooms.get(joinedRoom);
-    const existingPeers = Array.from(peers.entries()).map(([id, name]) => ({ id, name }));
+    const existingPeers = Array.from(peersInRoom.entries()).map(([id, name]) => ({ id, name }));
     socket.emit("existing-peers", existingPeers);
 
-    peers.set(socket.id, username);
+    peersInRoom.set(socket.id, username);
     socket.join(joinedRoom);
-    
-    // ✨ FIX: Use socket.broadcast.to() to emit to all clients in the room EXCEPT the sender
+
+    // CRITICAL FIX: Broadcast to OTHERS in the room, not the sender.
     socket.broadcast.to(joinedRoom).emit("peer-joined", { id: socket.id, name: username });
     
-    if (wasRoomEmpty) {
-        io.to(joinedRoom).emit("call-status-change", { isActive: true, projectId: joinedRoom });
+    if (peersInRoom.size === 1) { // If the first person joins
+        chatSocket.to(joinedRoom).emit("call-status-change", { isActive: true, projectId: joinedRoom });
     }
   });
 
   socket.on("signal", ({ to, data }) => {
-    const senderUsername = rooms.get(joinedRoom)?.get(socket.id) || 'Anonymous';
-    // This is a direct message, so videoSocket.to(to) is correct
-    videoSocket.to(to).emit("signal", { from: socket.id, name: senderUsername, data });
+    videoSocket.to(to).emit("signal", { from: socket.id, name: username, data });
   });
 
   const leaveRoom = () => {
     if (!joinedRoom) return;
-    const peers = rooms.get(joinedRoom);
-    if (peers) {
-      peers.delete(socket.id);
-      if (peers.size === 0) {
+    const peersInRoom = rooms.get(joinedRoom);
+    if (peersInRoom) {
+      peersInRoom.delete(socket.id);
+      if (peersInRoom.size === 0) {
         rooms.delete(joinedRoom);
-        io.to(joinedRoom).emit("call-status-change", { isActive: false, projectId: joinedRoom });
+        chatSocket.to(joinedRoom).emit("call-status-change", { isActive: false, projectId: joinedRoom });
       }
     }
-    // ✨ FIX: Use socket.broadcast.to() to notify others
     socket.broadcast.to(joinedRoom).emit("peer-left", socket.id);
     socket.leave(joinedRoom);
     joinedRoom = null;
@@ -108,7 +121,7 @@ videoSocket.on("connection", (socket) => {
   socket.on("disconnect", leaveRoom);
 });
 
-
 server.listen(port, () => {
   console.log(`Backend server with chat and video listening at http://localhost:${port}`);
 });
+
